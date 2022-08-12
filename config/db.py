@@ -3,16 +3,15 @@ from pymongo import MongoClient
 from repositries import generics as gen
 
 
-conn = MongoClient("mongodb://localhost:27017/AdServer")
+conn = MongoClient("mongodb://localhost:27017/AdServer2")
 
 
-advertisement_collection = conn.AdServer.advertisement
-interactive_advertisement_collection = conn.AdServer.interactive_advertisement
-user_collection = conn.AdServer.user
-role_permission_collection = conn.AdServer.role_permission
+advertisement_collection = conn.AdServer2.advertisement
+interactive_advertisement_collection = conn.AdServer2.interactive_advertisement
+user_collection = conn.AdServer2.user
+role_permission_collection = conn.AdServer2.role_permission
 
-served_ad_collection = conn.AdServer.served_ad
-
+served_ad_collection = conn.AdServer2.served_ad
 
 
 
