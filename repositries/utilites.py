@@ -1,11 +1,11 @@
-
-from models.advertisement import Advertisement, Category, MarketingInfo
 from pydantic import BaseModel
 from enum import Enum
 from uuid import UUID
 import random
 from models.ssp import UserInfo
 from models.advertisement import Language, TargetAge
+from repositries import generics as gen
+import requests, os
 
 def get_dict(obj):
     res = {}
@@ -47,10 +47,10 @@ def rand(start, end, decimal_places):
     return  round(random.uniform(start, end), decimal_places)
 
 
-gender_weight = 4
-age_weight = 4
-language_weight = 4
-location_weight = 4
+gender_weight = 1
+age_weight = 1
+language_weight = 1
+location_weight = 1
 
 
 
@@ -67,37 +67,54 @@ def get_weight_user_info(user_info : UserInfo, ad):
 
             if user_info.age is not None:
                 total_weight += age_weight
-                for age in ad["target_user_info"]["age"]:
-                    if age == TargetAge.ALL_AGES:
-                        weight_gained += age_weight/2
-                        break
-                    elif user_info.age <= 12:
-                        if age == TargetAge.KID:
-                            weight_gained += age_weight
-                            break
+                if TargetAge.ALL_AGES in ad["target_user_info"]["age"]:
+                    weight_gained += 3 * age_weight / 4
+                else:
+                    required_age = ""
+                    if user_info.age <= 12:
+                        required_age = TargetAge.KID
                     elif user_info.age <= 39:
-                        if age == TargetAge.YOUTH:
-                            weight_gained += age_weight
-                            break
+                        required_age = TargetAge.YOUTH
                     elif user_info.age <= 55:
-                        if age == TargetAge.ADULT:
-                            weight_gained += age_weight
-                            break
-                    elif user_info.age > 55:
-                        if age == TargetAge.OLD:
-                            weight_gained += age_weight
-                            break
-            
+                        required_age = TargetAge.ADULT
+                    else:
+                        required_age = TargetAge.OLD
+                    if required_age in ad["target_user_info"]["age"]:
+                        weight_gained += age_weight
+
             if user_info.language is not None:
                 total_weight += language_weight
                 if ad["target_user_info"]["language"] == Language.ANY:
-                    weight_gained += language_weight/2
+                    weight_gained += 3 * language_weight / 4
                 elif ad["target_user_info"]["language"] == user_info.language:
                     weight_gained += language_weight
             if user_info.location is not None:
                 total_weight += location_weight
                 if ad["target_user_info"]["location"].lower() == user_info.location.lower():
                     weight_gained += location_weight
-                else:
-                    weight_gained += location_weight/2
-    return [weight_gained, total_weight]
+                elif ad["target_user_info"]["location"].lower() == 'any':
+                    weight_gained += 3*location_weight/4
+    if total_weight == 0:
+        return -1
+    return weight_gained * 100 / total_weight
+
+
+
+def limited_get(collection , limit, skip, constraints):
+    all_items = gen.get_many(collection, constraints)
+    count = len(all_items) 
+    if skip > count:
+        return []
+    if limit == -1:
+        limit = count
+    begin = skip
+    end = min(count, begin + limit)
+    return all_items[begin:end]
+
+
+
+def download_file(URL, dir, filename):
+    os.makedirs(dir, exist_ok=True) 
+    path = dir + "/" + filename
+    response = requests.get(URL)
+    open(path, "wb").write(response.content)
