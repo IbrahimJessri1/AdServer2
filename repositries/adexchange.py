@@ -1,4 +1,3 @@
-from typing import final
 from repositries import generics as gen
 from models.ssp import Ad_Request, UserInfo
 from models.users import Membership, MembershipMarks
@@ -7,21 +6,26 @@ from .utilites import probability_get, rand
 from config.db import advertisement_collection, interactive_advertisement_collection, user_collection, served_ad_collection
 from models.ssp import ApplyAd
 from uuid import uuid4
-from .utilites import get_weight_user_info
+from .utilites import get_weight_user_info, get_kw_mark
 from fastapi import status, HTTPException
 from config.general import HOST
+from fastapi.templating import Jinja2Templates
+
 
 cat_weight = 1
 keyword_weight = 1
 
 
 user_info_weight = 10
-categories_weight = 38
+categories_weight = 40
 keywords_weight = 50
 ctr_weight = 7
 pay_weight = 7
 membership_weight = 7
-times_served_weight = 5
+times_served_weight = 10
+
+
+
 
 def negotiate(request : Ad_Request, interactive = 0):
 
@@ -85,19 +89,12 @@ def negotiate(request : Ad_Request, interactive = 0):
             all_weights += categories_weight
             marks += (cat_gained_marks * 100 / cat_tot_marks) * categories_weight
 
-        kw_tot_marks = 0
-        kw_gained_marks = 0
 
-        if request.keywords is not None:
-            for kw in request.keywords:
-                kw_tot_marks += keyword_weight
-                for a_kw in ad["keywords"]:
-                    if kw.lower() in a_kw.lower():
-                        kw_gained_marks += keyword_weight
-                        break
-        if kw_tot_marks != 0:
+        if request.keywords:
+            res = get_kw_mark(request.keywords, ad["keywords"])
+            print(res)
             all_weights += keywords_weight
-            marks += (kw_gained_marks * 100 / kw_tot_marks) * keywords_weight
+            marks += res * keywords_weight
 
         if mx_times_served != 0:
             all_weights += times_served_weight
@@ -127,18 +124,22 @@ def negotiate(request : Ad_Request, interactive = 0):
         final_weight = 0
         if all_weights != 0:
             final_weight = marks / all_weights
-
+        # if ad["id"] == "17da25c1-738e-42e1-b531-3f3973d75209":
+        #     print(final_weight, " " , "gaming")
+        # if ad["id"] == "02fba90c-959e-459d-9966-7f2d24ad980d":
+        #     print(final_weight, " ", "furn")
         final_ad_list[i] = [i, final_weight, final_ad_list[i][2] + request.min_cpc]
 
     final_ad_list.sort(key= lambda x : x[1], reverse= True)
     winner_ad = all_ads[final_ad_list[0][0]]
     #return {"cpc": final_ad_list[0][1], "ad_id": winner_ad["id"]}
-    print(final_ad_list[0][1])
     if final_ad_list[0][1] <50:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail= "No Ads For U")
     # print(final_ad_list[0])
     # print(winner_ad)
-    return {"cpc": final_ad_list[0][2], "ad_id": winner_ad["id"]}
+    res = {"cpc": final_ad_list[0][2], "weight":final_ad_list[0][1],  "ad_id": winner_ad["id"]}
+    print(res)
+    return res
     
 
 
@@ -150,12 +151,43 @@ def request(ad_apply : ApplyAd, interactive = 0):
     if (not ad) or (ad_apply.cpc > ad["marketing_info"]["max_cpc"]):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No Ad For U")
     id = str(uuid4())
-    served_ad = {"id": id, "agreed_cpc": ad_apply.cpc, "impressions": 0, "clicks" : 0, "ad_id": ad["id"], "advertiser_username" : ad["ad_info"]["advertiser_username"]}
+    served_ad = {"id": id, "agreed_cpc": ad_apply.cpc, "impressions": 0, "clicks" : 0, "ad_id": ad["id"], "advertiser_username" : ad["ad_info"]["advertiser_username"], "payment_account": ad_apply.payment_account}
     served_ad_collection.insert_one(dict(served_ad))
     data = {
         "url" : HOST + 'serve_ad/impression/' + id,
         "text" : ad["ad_info"]["text"]
     }
+    width = ad["ad_info"]["width"]
+    height = ad["ad_info"]["height"]
+    ratio = width / height
+    if ad_apply.max_width != 0 and ad_apply.max_height == 0:
+        width = min(width, ad_apply.max_width)
+        height = int(width / ratio)
+    elif ad_apply.max_width == 0 and ad_apply.max_height != 0:
+        height = min(height, ad_apply.max_height)
+        width = int(height * ratio)
+    elif ad_apply.max_width != 0 and ad_apply.max_height != 0:
+        max_width = int(min(ad_apply.max_height, height) * ratio)
+        if max_width <= ad_apply.max_width:
+            width = max_width
+            height = int(width / ratio)
+        else:
+            height = int(min(ad_apply.max_width,width) / ratio)
+            width = int(height * ratio)
+
+    data["width"] = width
+    data["height"] = height
+    data["text_font_size"] =int((13/275) * (width+height)/2)
+    data["text_margin_top"] = int((13/275) * (width+height)/2)
     if interactive != 0:
         data["redirect_url"] = HOST + 'serve_ad/click/' + id 
     return data
+
+
+def html_request(req, ad_apply, interactive = 0):
+    data = request(ad_apply=ad_apply, interactive=interactive)
+    data["request"] = req
+    templates = Jinja2Templates(directory="templates")
+    if interactive:
+        return templates.TemplateResponse("interactive_img_ad.html",data)
+    return templates.TemplateResponse("img_ad.html",data)
