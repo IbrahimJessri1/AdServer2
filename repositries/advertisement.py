@@ -22,7 +22,8 @@ def create_ad(ad_input, advertiser_username, interactive = 0):
                 ad_info= ad_info,
                 categories=ad_input.categories,
                 url= ad_input.url,
-                redirect_url=ad_input.redirect_url
+                redirect_url=ad_input.redirect_url,
+                keywords=ad_input.keywords
             )
             collection = interactive_advertisement_collection
         else:
@@ -33,7 +34,8 @@ def create_ad(ad_input, advertiser_username, interactive = 0):
                 marketing_info=MarketingInfo(max_cpc= ad_input.max_cpc,impressions= 0, raise_percentage=ad_input.raise_percentage),
                 ad_info= ad_info,
                 categories=ad_input.categories,
-                url= ad_input.url
+                url= ad_input.url,
+                keywords=ad_input.keywords
             )
             collection = advertisement_collection
         ad = get_dict(advertisement)
@@ -43,15 +45,30 @@ def create_ad(ad_input, advertiser_username, interactive = 0):
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail='An error happened, try again later')
 
 
-def get_my_ads(username, limit, skip, interactive):
-    collection = advertisement_collection
-    if interactive:
-        collection = interactive_advertisement_collection
-    res =  limited_get(collection=collection, limit=limit, skip=skip, constraints= {"ad_info.advertiser_username" : username})
-    ads = []
-    for ad in res:
-        ads.append(toAdShow(ad, interactive))
-    return ads
+def get_my_ads(username, limit, skip, interactive, type, shape):
+    constraints = {"ad_info.advertiser_username" : username}
+    if type != 'all':
+        constraints = {"$and" : [constraints, {"ad_info.type" : type}]}
+    if shape != 'all':
+        constraints = {"$and" : [constraints, {"ad_info.shape" : shape}]}
+    if interactive == 2:
+        res1 = limited_get(collection=interactive_advertisement_collection, limit=limit, skip=skip, constraints= constraints)
+        res2 = limited_get(collection=advertisement_collection, limit=limit, skip=skip, constraints= constraints)
+        ads = []
+        for ad in res1:
+            ads.append(toAdShow(ad, 1))
+        for ad in res2:
+            ads.append(toAdShow(ad, 0))
+        return ads
+    else:
+        collection = advertisement_collection
+        if interactive == 1:
+            collection = interactive_advertisement_collection
+        res =  limited_get(collection=collection, limit=limit, skip=skip, constraints= constraints)
+        ads = []
+        for ad in res:
+            ads.append(toAdShow(ad, interactive))
+        return ads
 
 
 def get_my_served_ads(username, limit, skip):
@@ -74,9 +91,6 @@ def get(constraints, limit, skip, interactive):
 def remove(constraints):
     gen.remove(advertisement_collection, constraints)
     
-
-
-
 
 
 def get_ad(id, username):
